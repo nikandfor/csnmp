@@ -183,9 +183,6 @@ static int _dec_var(const char *b, int *i, int l, int tp, void *v_) {
 static int _dec_pdu3(const char *b, int *i, int l, int tp, void *p_) {
     snmp_pdu_t *p = (snmp_pdu_t *)p_;
 
-    fprintf(stderr, "vars:\n");
-    _hex_dump(b, *i, l);
-
     while (*i < l) {
         snmp_var_t v = {};
         int r = asn1_dec_sequence(b, i, l, _dec_var, &v);
@@ -213,9 +210,6 @@ static int _dec_pdu3(const char *b, int *i, int l, int tp, void *p_) {
 
 static int _dec_pdu2(const char *b, int *i, int l, int tp, void *p_) {
     snmp_pdu_t *p = (snmp_pdu_t *)p_;
-
-    fprintf(stderr, "req:\n");
-    _hex_dump(b, *i, l);
 
     p->command = tp;
 
@@ -282,9 +276,6 @@ static int _dec_pdu2(const char *b, int *i, int l, int tp, void *p_) {
 static int _dec_pdu(const char *b, int *i, int l, int tp, void *p_) {
     snmp_pdu_t *p = (snmp_pdu_t *)p_;
 
-    fprintf(stderr, "pdu1:\n");
-    _hex_dump(b, *i, l);
-
     if (*i >= l) {
         asn1_set_error(&p->error, *i, "empty stream");
         return -1;
@@ -321,8 +312,8 @@ static int _dec_pdu(const char *b, int *i, int l, int tp, void *p_) {
 }
 
 int snmp_dec_pdu(const char *buf, int buf_len, snmp_pdu_t *p) {
-    fprintf(stderr, "pdu:\n");
-    _hex_dump(buf, 0, buf_len);
+    // fprintf(stderr, "pdu:\n");
+    // _hex_dump(buf, 0, buf_len);
 
     int i = 0;
     int r = asn1_dec_sequence(buf, &i, buf_len, _dec_pdu, p);
@@ -611,16 +602,27 @@ void snmp_dump_var(snmp_var_t *v) {
 }
 
 void snmp_dump_pdu(snmp_pdu_t *p, const char *msg) {
-    fprintf(stderr, "%s: ver %c community %s command %x (%d vars) reqid %x %s %d,%d\n",  //
-            (msg == NULL ? "pdu" : msg), '0' + p->version,                               //
-            p->community.b, p->command, p->vars_len, p->req_id,                          //
-            p->command == SNMP_CMD_GET_BULK ? "max" : "err",                             //
-            p->command == SNMP_CMD_GET_BULK ? p->max_repeaters : p->error_status,        //
+    fprintf(stderr, "%s: ver %c community %s command %s (%x) (%d vars) reqid %x %s %d,%d\n",   //
+            (msg == NULL ? "pdu" : msg), '0' + p->version,                                     //
+            p->community.b, snmp_command_str(p->command), p->command, p->vars_len, p->req_id,  //
+            p->command == SNMP_CMD_GET_BULK ? "max" : "err",                                   //
+            p->command == SNMP_CMD_GET_BULK ? p->max_repeaters : p->error_status,              //
             p->command == SNMP_CMD_GET_BULK ? p->max_repetitions : p->error_index);
 
     for (int i = 0; i < p->vars_len; i++) {
-        fprintf(stderr, "var[%2d]: ", i);
+        fprintf(stderr, "    var[%2d]: ", i);
         snmp_dump_var(&p->vars[i]);
         fprintf(stderr, "\n");
     }
+}
+
+const char *snmp_command_str(int c) {
+    int q = c & 0xf;
+    if (q < 0 || q > SNMP_CMD_GET_BULK) {
+        return "undefined";
+    }
+
+    const char *a[] = {"GET", "GETNEXT", "RESPONSE", "SET", "TRAP", "GETBULK"};
+
+    return a[q];
 }

@@ -15,9 +15,9 @@ void asn1_set_error(asn1_error_t *s, int p, const char *m) {
 }
 
 void asn1_free_oid(asn1_oid_t *id) {
-    if (id->id) {
-        free(id->id);
-        id->id = NULL;
+    if (id->b) {
+        free(id->b);
+        id->b = NULL;
     }
     id->len = 0;
 }
@@ -134,19 +134,27 @@ int asn1_dec_oid(const char *b, int *i, int l, asn1_oid_t *id) {
     if (*i + n > l) {
         return -1;
     }
-
-    id->id = realloc(id->id, (n + 1) * sizeof(int));
-    id->len = n + 1;
-
-    int *q = id->id;
-
-    q[0] = b[*i] / 40;
-    q[1] = b[*i] % 40;
-    for (int j = 1; j < n; j++) {
-        q[j + 1] = b[*i + j];
+    if (n == 0) {
+        return 0;
     }
 
-    *i += n;
+    id->b = realloc(id->b, (n + 1) * sizeof(int));
+    id->len = 2;
+
+    id->b[0] = b[*i] / 40;
+    id->b[1] = b[(*i)++] % 40;
+
+    int buf = 0;
+    for (int j = 1; j < n; j++) {
+        int q = b[(*i)++];
+
+        buf = buf << 7 | (q & 0x7f);
+
+        if ((q & 0x80) == 0) {
+            id->b[id->len++] = buf;
+            buf = 0;
+        }
+    }
 
     return 0;
 }
@@ -289,27 +297,66 @@ int asn1_enc_string(char **buf, int *i, int *l, int tp, asn1_str_t val) {
 }
 
 int asn1_enc_oid(char **buf, int *i, int *l, int tp, asn1_oid_t val) {
-    int ll = val.len - 1;
-    if (ll <= 0) {
-        ll = 1;
+    int len = 1;
+    for (int j = 2; j < val.len; j++) {
+        int q = val.b[j];
+
+        if (q < 0x80) {
+            len++;
+        } else if (q < 0x4000) {
+            len += 2;
+        } else if (q < 0x200000) {
+            len += 3;
+        } else if (q < 0x10000000) {
+            len += 4;
+        } else {
+            len += 5;
+        }
     }
 
-    int r = _grow(buf, i, l, 1 + _len_size(ll) + val.len);
+    int r = _grow(buf, i, l, 1 + _len_size(len) + len);
     if (r) {
         return -1;
     }
 
     (*buf)[(*i)++] = tp;
-    _enc_len(*buf, i, ll);
+    _enc_len(*buf, i, len);
 
     if (val.len == 0) {
         (*buf)[(*i)++] = 0;
+    } else if (val.b[0] > 2) {
+        return -1;
     } else if (val.len == 1) {
-        (*buf)[(*i)++] = val.id[0] * 40;
+        (*buf)[(*i)++] = val.b[0] * 40;
+    } else if (val.b[1] >= 40) {
+        return -1;
     } else {
-        (*buf)[(*i)++] = val.id[0] * 40 + val.id[1];
-        for (int j = 2; j < val.len; j++) {
-            (*buf)[(*i)++] = val.id[j];
+        (*buf)[(*i)++] = val.b[0] * 40 + val.b[1];
+    }
+
+    for (int j = 2; j < val.len; j++) {
+        int q = val.b[j];
+
+        if (q < 0x80) {
+            (*buf)[(*i)++] = q;
+        } else if (q < 0x4000) {
+            (*buf)[(*i)++] = (q >> 7) | 0x80;
+            (*buf)[(*i)++] = q & 0x7f;
+        } else if (q < 0x200000) {
+            (*buf)[(*i)++] = (q >> 14) | 0x80;
+            (*buf)[(*i)++] = (q >> 7) | 0x80;
+            (*buf)[(*i)++] = q & 0x7f;
+        } else if (q < 0x10000000) {
+            (*buf)[(*i)++] = (q >> 21) | 0x80;
+            (*buf)[(*i)++] = (q >> 14) | 0x80;
+            (*buf)[(*i)++] = (q >> 7) | 0x80;
+            (*buf)[(*i)++] = q & 0x7f;
+        } else {
+            (*buf)[(*i)++] = (q >> 28) | 0x80;
+            (*buf)[(*i)++] = (q >> 21) | 0x80;
+            (*buf)[(*i)++] = (q >> 14) | 0x80;
+            (*buf)[(*i)++] = (q >> 7) | 0x80;
+            (*buf)[(*i)++] = q & 0x7f;
         }
     }
 
@@ -326,8 +373,6 @@ int asn1_enc_sequence(char **buf, int *i, int *l, int tp, int (*c)(char **buf, i
 
     int len = *i - st;
     int ll = _len_size(len);
-
-    fprintf(stderr, "enc sec: %d (%d-%d), move on %d (%d+%d) to %d\n", len, st, *i, 1 + ll, 1, ll, st + 1 + ll);
 
     r = _grow(buf, &st, l, 1 + ll + len);
     if (r) {
@@ -349,6 +394,6 @@ void asn1_dump_oid(asn1_oid_t d) {
         if (j != 0) {
             fprintf(stderr, ".");
         }
-        fprintf(stderr, "%d", d.id[j]);
+        fprintf(stderr, "%d", d.b[j]);
     }
 }

@@ -84,3 +84,5 @@ int snmp_send_pdu(int fd, snmp_pdu_t* pdu);
 int snmp_dump_packet(int fd);
 
 void snmp_dump_pdu(snmp_pdu_t* p, const char* msg);
+
+const char* snmp_command_str(int c);

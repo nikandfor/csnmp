@@ -26,7 +26,7 @@ typedef struct {
 } asn1_str_t;
 
 typedef struct {
-    int *id;
+    int *b;
     int len;
 } asn1_oid_t;
 
