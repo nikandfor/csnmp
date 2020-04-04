@@ -30,6 +30,40 @@ void asn1_free_str(asn1_str_t *s) {
     s->len = 0;
 }
 
+asn1_oid_t asn1_crt_oid(int *id, int l) {
+    asn1_oid_t v;
+
+    v.len = l;
+    v.b = malloc(l * sizeof(int));
+    memcpy(v.b, id, l * sizeof(int));
+
+    return v;
+}
+
+asn1_oid_t *asn1_new_oid(int *id, int l) {
+    asn1_oid_t *v = malloc(sizeof(*v));
+
+    v->len = l;
+    v->b = malloc(l * sizeof(int));
+    memcpy(v->b, id, l * sizeof(int));
+
+    return v;
+}
+
+inline asn1_str_t *asn1_new_str(char *msg, int l) {
+    if (l == 0) {
+        l = strlen(msg);
+    }
+
+    asn1_str_t *v = malloc(sizeof(*v));
+
+    v->len = l;
+    v->b = malloc(l + 1);
+    memcpy(v->b, msg, l + 1);
+
+    return v;
+}
+
 int asn1_dec_length(const char *b, int *i, int l) {
     int res = 0;
 
@@ -241,7 +275,7 @@ int asn1_enc_null(char **buf, int *i, int *l, int tp) {
 
 int asn1_enc_int(char **buf, int *i, int *l, int tp, int val) {
     int n = 1;
-    for (int q = val >> 8; q != 0; q >>= 8) {
+    for (unsigned q = val >> 8; q != 0; q >>= 8) {
         n++;
     }
 
@@ -379,7 +413,7 @@ int asn1_enc_sequence(char **buf, int *i, int *l, int tp, int (*c)(char **buf, i
         return -1;
     }
 
-    memmove(*buf + st + 1 + ll, *buf + st, *l - st);
+    memmove(*buf + st + 1 + ll, *buf + st, len);
 
     (*buf)[st++] = tp;
     _enc_len(*buf, &st, len);

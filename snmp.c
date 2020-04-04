@@ -36,9 +36,7 @@ int snmp_close(int fd) {
     return close(fd);
 }
 
-void snmp_free_var(snmp_var_t *v) {
-    asn1_free_oid(&v->oid);
-
+void snmp_free_var_value(snmp_var_t *v) {
     switch (v->type) {
     case SNMP_TP_INT:
     case SNMP_TP_COUNTER:
@@ -69,9 +67,13 @@ void snmp_free_var(snmp_var_t *v) {
     v->value = NULL;
 }
 
-void snmp_free_pdu(snmp_pdu_t *p) {
-    asn1_free_str(&p->community);
+void snmp_free_var(snmp_var_t *v) {
+    asn1_free_oid(&v->oid);
 
+    snmp_free_var_value(v);
+}
+
+void snmp_free_pdu_vars(snmp_pdu_t *p) {
     for (int i = 0; i < p->vars_len; i++) {
         snmp_free_var(&p->vars[i]);
     }
@@ -83,6 +85,12 @@ void snmp_free_pdu(snmp_pdu_t *p) {
         free(p->vars);
         p->vars = NULL;
     }
+}
+
+void snmp_free_pdu(snmp_pdu_t *p) {
+    asn1_free_str(&p->community);
+
+    snmp_free_pdu_vars(p);
 }
 
 static void _hex_dump(const char *b, int pos, int l) {
@@ -125,6 +133,49 @@ static int _append_var(snmp_pdu_t *p, snmp_var_t v) {
     p->vars[p->vars_len++] = v;
 
     return 0;
+}
+
+int snmp_add_error(snmp_pdu_t *p, int code, const char *msg) {
+    if (p->error_status) {
+        return -1;
+    }
+
+    if (msg == NULL) {
+        msg = "internal error";
+    }
+
+    p->error_status = code;
+    p->error_index = p->vars_len;
+
+    snmp_var_t v = {};
+
+    // v.oid.id = malloc();
+
+    v.type = ASN1_OCT_STR;
+
+    asn1_str_t *str = malloc(sizeof(asn1_str_t));
+    str->len = strlen(msg);
+    str->b = malloc(str->len + 1);  // +1 for null byte
+    memcpy(str->b, msg, str->len + 1);
+    v.value = str;
+
+    int r = _append_var(p, v);
+    if (r < 0) {
+        snmp_free_var(&v);
+        return -1;
+    }
+
+    return 0;
+}
+
+int snmp_add_var(snmp_pdu_t *p, asn1_oid_t oid, int tp, void *val) {
+    snmp_var_t v = {
+        .oid = oid,
+        .type = tp,
+        .value = val,
+    };
+
+    return _append_var(p, v);
 }
 
 static int _dec_var(const char *b, int *i, int l, int tp, void *v_) {
@@ -182,6 +233,8 @@ static int _dec_var(const char *b, int *i, int l, int tp, void *v_) {
 
 static int _dec_pdu3(const char *b, int *i, int l, int tp, void *p_) {
     snmp_pdu_t *p = (snmp_pdu_t *)p_;
+
+    snmp_free_pdu_vars(p);
 
     while (*i < l) {
         snmp_var_t v = {};
@@ -405,38 +458,14 @@ static int _enc_pdu2(char **b, int *i, int *l, void *p_) {
             return -1;
         }
     } else {
-        r = asn1_enc_int(b, i, l, ASN1_INT, p->error.code);
+        r = asn1_enc_int(b, i, l, ASN1_INT, p->error_status);
         if (r < 0) {
             return -1;
         }
 
-        if (p->error.code) {
-            r = asn1_enc_int(b, i, l, ASN1_INT, p->vars_len);
-            if (r < 0) {
-                return -1;
-            }
-
-            snmp_var_t v = {};
-
-            // v.oid.id = malloc();
-
-            v.type = ASN1_OCT_STR;
-
-            asn1_str_t *str = malloc(sizeof(asn1_str_t));
-            str->b = malloc(strlen(p->error.message) + 1);
-            memcpy(str->b, p->error.message, strlen(p->error.message) + 1);
-            v.value = str;
-
-            r = _append_var(p, v);
-            if (r < 0) {
-                snmp_free_var(&v);
-                return -1;
-            }
-        } else {
-            r = asn1_enc_int(b, i, l, ASN1_INT, 0);
-            if (r < 0) {
-                return -1;
-            }
+        r = asn1_enc_int(b, i, l, ASN1_INT, p->error_index);
+        if (r < 0) {
+            return -1;
         }
     }
 
@@ -602,11 +631,11 @@ void snmp_dump_var(snmp_var_t *v) {
 }
 
 void snmp_dump_pdu(snmp_pdu_t *p, const char *msg) {
-    fprintf(stderr, "%s: ver %c community %s command %s (%x) (%d vars) reqid %x %s %d,%d\n",   //
-            (msg == NULL ? "pdu" : msg), '0' + p->version,                                     //
-            p->community.b, snmp_command_str(p->command), p->command, p->vars_len, p->req_id,  //
-            p->command == SNMP_CMD_GET_BULK ? "max" : "err",                                   //
-            p->command == SNMP_CMD_GET_BULK ? p->max_repeaters : p->error_status,              //
+    fprintf(stderr, "%s: ver %c community %s command %-9s (%x) (%d vars) reqid %x %s %d,%d\n",  //
+            (msg == NULL ? "pdu" : msg), '0' + p->version,                                      //
+            p->community.b, snmp_command_str(p->command), p->command, p->vars_len, p->req_id,   //
+            p->command == SNMP_CMD_GET_BULK ? "max" : "err",                                    //
+            p->command == SNMP_CMD_GET_BULK ? p->max_repeaters : p->error_status,               //
             p->command == SNMP_CMD_GET_BULK ? p->max_repetitions : p->error_index);
 
     for (int i = 0; i < p->vars_len; i++) {
@@ -625,4 +654,16 @@ const char *snmp_command_str(int c) {
     const char *a[] = {"GET", "GETNEXT", "RESPONSE", "SET", "TRAP", "GETBULK"};
 
     return a[q];
+}
+
+int *snmp_new_int(int v) {
+    int *r = malloc(sizeof(v));
+    *r = v;
+    return r;
+}
+
+long long *snmp_new_long(long long v) {
+    long long *r = malloc(sizeof(v));
+    *r = v;
+    return r;
 }

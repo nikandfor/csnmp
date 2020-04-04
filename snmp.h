@@ -2,6 +2,7 @@
 
 #include <netinet/in.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "asn1.h"
 
@@ -73,7 +74,12 @@ typedef struct {
 } snmp_pdu_t;
 
 void snmp_free_var(snmp_var_t* v);
+void snmp_free_var_value(snmp_var_t* v);
 void snmp_free_pdu(snmp_pdu_t* p);
+void snmp_free_pdu_vars(snmp_pdu_t* p);
+
+int snmp_add_error(snmp_pdu_t* p, int code, const char* msg);
+int snmp_add_var(snmp_pdu_t* p, asn1_oid_t oid, int tp, void* val);
 
 int snmp_bind(uint32_t addr, int port);
 int snmp_close(int fd);
@@ -86,3 +92,7 @@ int snmp_dump_packet(int fd);
 void snmp_dump_pdu(snmp_pdu_t* p, const char* msg);
 
 const char* snmp_command_str(int c);
+
+int* snmp_new_int(int v);
+
+long long* snmp_new_long(long long v);
