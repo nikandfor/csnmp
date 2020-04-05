@@ -36,8 +36,8 @@ int main(int argc, const char *argv[]) {
 
     cerr << "listening " << addr << endl;
 
-    s.add(vector<int>{1, 2, 3, 4}, &a);
-    s.add(vector<int>{1, 2, 3, 5}, &b);
+    s.add({{1, 2, 3, 4}}, &a);
+    s.add({{1, 2, 3, 5}}, &b);
 
     while (working) {
         try {

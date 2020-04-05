@@ -59,14 +59,7 @@ class OID {
     }
 
     OID(const vector<int> v) {
-        int *b = new int[v.size()];
-        for (int i = 0; i < v.size(); i++) {
-            b[i] = v[i];
-        }
-
-        oid = asn1_crt_oid(b, v.size());
-
-        delete[] b;
+        oid = asn1_crt_oid(v.data(), v.size());
     }
 
     OID(asn1_oid_t v) {
@@ -90,17 +83,6 @@ class OID {
     }
 };
 
-class ex : public std::exception {
-    const char *msg;
-
-   public:
-    ex(const char *m) : msg(m) {}
-
-    const char *what() {
-        return msg;
-    }
-};
-
 class EasySNMP {
     int fd = -1;
     map<OID, Var *> oids;
@@ -109,7 +91,7 @@ class EasySNMP {
     void listen(string addr) {
         fd = snmp_bind_addr(addr.c_str());
         if (fd < 0) {
-            throw new ex("can't bind");
+            throw new logic_error("can't bind");
         }
     }
 
@@ -159,7 +141,7 @@ class EasySNMP {
         void *val = it->second->val();
 
         if (type == 0) {
-            throw new ex("bad var");
+            throw new logic_error("bad var");
         }
 
         snmp_add_var(p, oid, type, val);
@@ -195,7 +177,7 @@ class EasySNMP {
 
                 if (type == 0) {
                     asn1_free_oid(&oid);
-                    throw new ex("bad var");
+                    throw new logic_error("bad var");
                 }
 
                 snmp_add_var(p, oid, type, val);
@@ -222,7 +204,7 @@ class EasySNMP {
             if (r < 0) {
                 if (p.error.code == 0) {
                     perror("recv pdu error, errno:");
-                    throw new ex("read error");
+                    throw new logic_error("read error");
                 } else {
                     cerr << "recv pdu: " << p.error.message << endl;
                 }
@@ -260,7 +242,7 @@ class EasySNMP {
                 if (p.error.code == 0) {
                     perror("send pdu error, errno:");
                     snmp_dump_pdu(NULL, &p);
-                    throw new ex("send response");
+                    throw new logic_error("send response");
                 } else {
                     cerr << "send pdu: " << p.error.message << endl;
                     snmp_dump_pdu(NULL, &p);

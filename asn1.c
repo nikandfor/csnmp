@@ -66,7 +66,7 @@ void asn1_free_str(asn1_str_t *s) {
     s->len = 0;
 }
 
-asn1_oid_t asn1_crt_oid(int *id, int l) {
+asn1_oid_t asn1_crt_oid(const int *id, int l) {
     asn1_oid_t v;
 
     v.len = l;
@@ -76,7 +76,7 @@ asn1_oid_t asn1_crt_oid(int *id, int l) {
     return v;
 }
 
-asn1_oid_t *asn1_new_oid(int *id, int l) {
+asn1_oid_t *asn1_new_oid(const int *id, int l) {
     asn1_oid_t *v = malloc(sizeof(*v));
 
     v->len = l;

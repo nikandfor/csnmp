@@ -44,8 +44,8 @@ void asn1_set_error(asn1_error_t *s, int p, const char *m);
 void asn1_free_oid(asn1_oid_t *id);
 void asn1_free_str(asn1_str_t *s);
 
-asn1_oid_t asn1_crt_oid(int *id, int l);
-asn1_oid_t *asn1_new_oid(int *id, int l);
+asn1_oid_t asn1_crt_oid(const int *id, int l);
+asn1_oid_t *asn1_new_oid(const int *id, int l);
 asn1_str_t *asn1_new_str(const char *msg, int l);
 
 int asn1_dec_length(const char *b, int *i, int l);
