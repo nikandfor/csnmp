@@ -1,6 +1,9 @@
+#define _POSIX_C_SOURCE 200112L
+
 #include "snmp.h"
 
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +33,55 @@ int snmp_bind(uint32_t addr, int port) {
 
 error:
     return fd;
+}
+
+int snmp_bind_addr(const char *addr) {
+    struct addrinfo hints;
+    struct addrinfo *result, *rp;
+    int sfd, s;
+    int ret = -1;
+
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+    hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
+    hints.ai_flags = AI_PASSIVE;    /* For wildcard IP address */
+    hints.ai_protocol = 0;          /* Any protocol */
+    hints.ai_canonname = NULL;
+    hints.ai_addr = NULL;
+    hints.ai_next = NULL;
+
+    s = getaddrinfo(NULL, addr, &hints, &result);
+    if (s != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+        if (s > 0)
+            s = -s;
+        return s;
+    }
+
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sfd == -1)
+            continue;
+
+        int r = bind(sfd, rp->ai_addr, rp->ai_addrlen);
+        if (r == 0) {
+            goto ok;
+        }
+
+        close(sfd);
+    }
+
+    if (rp == NULL) {
+        goto error;
+    }
+
+ok:
+    ret = sfd;
+
+error:
+    freeaddrinfo(result);
+
+    return ret;
 }
 
 int snmp_close(int fd) {
@@ -147,7 +199,7 @@ int snmp_add_error(snmp_pdu_t *p, int code, const char *msg) {
     p->error_status = code;
     p->error_index = p->vars_len;
 
-    snmp_var_t v = {};
+    snmp_var_t v = {0};
 
     // v.oid.id = malloc();
 
@@ -164,6 +216,17 @@ int snmp_add_error(snmp_pdu_t *p, int code, const char *msg) {
         snmp_free_var(&v);
         return -1;
     }
+
+    return 0;
+}
+
+int snmp_set_error_index(snmp_pdu_t *p, int code, int index) {
+    if (p->error_status) {
+        return -1;
+    }
+
+    p->error_status = code;
+    p->error_index = index;
 
     return 0;
 }
@@ -212,11 +275,11 @@ static int _dec_var(const char *b, int *i, int l, int tp, void *v_) {
     case SNMP_TP_OCT_STR:
     case SNMP_TP_IP_ADDR:
     default:
-        v->value = malloc(sizeof(asn1_str_t));
+        v->value = calloc(1, sizeof(asn1_str_t));
         r = asn1_dec_string(b, i, l, (asn1_str_t *)v->value);
         break;
     case SNMP_TP_OID:
-        v->value = malloc(sizeof(asn1_oid_t));
+        v->value = calloc(1, sizeof(asn1_oid_t));
         r = asn1_dec_oid(b, i, l, (asn1_oid_t *)v->value);
         break;
     case SNMP_TP_NULL:
@@ -323,7 +386,13 @@ static int _dec_pdu2(const char *b, int *i, int l, int tp, void *p_) {
         }
     }
 
-    return asn1_dec_sequence(b, i, l, _dec_pdu3, p);
+    r = asn1_dec_sequence(b, i, l, _dec_pdu3, p);
+    if (r < 0) {
+        asn1_set_error(&p->error, *i, "pdu2 seq");
+        return -1;
+    }
+
+    return 0;
 }
 
 static int _dec_pdu(const char *b, int *i, int l, int tp, void *p_) {
@@ -361,7 +430,13 @@ static int _dec_pdu(const char *b, int *i, int l, int tp, void *p_) {
         return -1;
     }
 
-    return asn1_dec_sequence(b, i, l, _dec_pdu2, p);
+    r = asn1_dec_sequence(b, i, l, _dec_pdu2, p);
+    if (r < 0) {
+        asn1_set_error(&p->error, *i, "pdu1 seq");
+        return -1;
+    }
+
+    return 0;
 }
 
 int snmp_dec_pdu(const char *buf, int buf_len, snmp_pdu_t *p) {
@@ -371,6 +446,7 @@ int snmp_dec_pdu(const char *buf, int buf_len, snmp_pdu_t *p) {
     int i = 0;
     int r = asn1_dec_sequence(buf, &i, buf_len, _dec_pdu, p);
     if (r < 0) {
+        asn1_set_error(&p->error, i, "pdu seq");
         return r;
     }
 
@@ -391,12 +467,13 @@ static int _enc_var(char **b, int *i, int *l, void *v_) {
 
     int r = asn1_enc_oid(b, i, l, ASN1_OID, v->oid);
     if (r) {
+        asn1_set_error(&v->error, *i, "encode var oid");
         return -1;
     }
 
     switch (v->type) {
     case 0:
-        // TODO: log?
+        asn1_set_error(&v->error, *i, "undefined var type");
         return -1;
     case SNMP_TP_INT:
     case SNMP_TP_COUNTER:
@@ -423,15 +500,24 @@ static int _enc_var(char **b, int *i, int *l, void *v_) {
         break;
     }
 
-    return r;
+    if (r) {
+        asn1_set_error(&v->error, *i, "encode var value");
+        return -1;
+    }
+
+    return 0;
 }
 
 static int _enc_pdu3(char **b, int *i, int *l, void *p_) {
     snmp_pdu_t *p = (snmp_pdu_t *)p_;
 
     for (int j = 0; j < p->vars_len; j++) {
+        p->vars[j].error = (asn1_error_t){0};
+
         int r = asn1_enc_sequence(b, i, l, ASN1_CONSTRUCTOR | ASN1_SEQ, _enc_var, &p->vars[j]);
         if (r) {
+            p->error = p->vars[j].error;
+            asn1_set_error(&p->error, *i, "encode var sequence");
             return -1;
         }
     }
@@ -444,65 +530,97 @@ static int _enc_pdu2(char **b, int *i, int *l, void *p_) {
 
     int r = asn1_enc_int(b, i, l, ASN1_INT, p->req_id);
     if (r) {
+        asn1_set_error(&p->error, *i, "encode req id");
         return -1;
     }
 
     if (p->command == SNMP_CMD_GET_BULK) {
         r = asn1_enc_int(b, i, l, ASN1_INT, p->max_repeaters);
         if (r < 0) {
+            asn1_set_error(&p->error, *i, "encode max repeaters");
             return -1;
         }
 
         r = asn1_enc_int(b, i, l, ASN1_INT, p->max_repetitions);
         if (r < 0) {
+            asn1_set_error(&p->error, *i, "encode max repetitions");
             return -1;
         }
     } else {
         r = asn1_enc_int(b, i, l, ASN1_INT, p->error_status);
         if (r < 0) {
+            asn1_set_error(&p->error, *i, "encode error status");
             return -1;
         }
 
         r = asn1_enc_int(b, i, l, ASN1_INT, p->error_index);
         if (r < 0) {
+            asn1_set_error(&p->error, *i, "encode error index");
             return -1;
         }
     }
 
-    return asn1_enc_sequence(b, i, l, ASN1_CONSTRUCTOR | ASN1_SEQ, _enc_pdu3, p);
+    r = asn1_enc_sequence(b, i, l, ASN1_CONSTRUCTOR | ASN1_SEQ, _enc_pdu3, p);
+    if (r < 0) {
+        asn1_set_error(&p->error, *i, "pdu2 seq");
+        return -1;
+    }
+
+    return 0;
 }
 
 static int _enc_pdu(char **b, int *i, int *l, void *p_) {
     snmp_pdu_t *p = (snmp_pdu_t *)p_;
 
     int r = asn1_enc_int(b, i, l, ASN1_INT, p->version);
-    if (r) {
+    if (r < 0) {
+        asn1_set_error(&p->error, *i, "encode version");
         return -1;
     }
 
     r = asn1_enc_string(b, i, l, ASN1_OCT_STR, p->community);
-    if (r) {
+    if (r < 0) {
+        asn1_set_error(&p->error, *i, "encode community");
         return -1;
     }
 
-    return asn1_enc_sequence(b, i, l, p->command, _enc_pdu2, p);
+    r = asn1_enc_sequence(b, i, l, p->command, _enc_pdu2, p);
+    if (r < 0) {
+        asn1_set_error(&p->error, *i, "pdu1 seq");
+        return -1;
+    }
+
+    return 0;
 }
 
 int snmp_enc_pdu(char **buf, int *i, int *buf_len, snmp_pdu_t *p) {
-    return asn1_enc_sequence(buf, i, buf_len, ASN1_CONSTRUCTOR | ASN1_SEQ, _enc_pdu, p);
+    int r = asn1_enc_sequence(buf, i, buf_len, ASN1_CONSTRUCTOR | ASN1_SEQ, _enc_pdu, p);
+    if (r) {
+        asn1_set_error(&p->error, *i, "pdu seq");
+        return -1;
+    }
+
+    return 0;
 }
 
 int snmp_recv_pdu(int fd, snmp_pdu_t *p) {
     int ret = -1;
 
+    p->error = (asn1_error_t){0};
+
     int buf_len = 20 * (1 << 10);
     char *buf = malloc(buf_len);
+    if (!buf) {
+        asn1_set_error(&p->error, -1, "alloc read buffer");
+        goto error;
+    }
 
     p->addr_len = sizeof(p->addr);
     memset(&p->addr, 0, p->addr_len);
 
     ssize_t n = recvfrom(fd, (void *)buf, buf_len, 0, (struct sockaddr *)&p->addr, &p->addr_len);
     if (n < 0) {
+        asn1_set_error(&p->error, -1, "recvfrom");
         goto error;
     }
 
@@ -524,8 +642,14 @@ error:
 int snmp_send_pdu(int fd, snmp_pdu_t *p) {
     int ret = -1;
 
+    p->error = (asn1_error_t){0};
+
     int buf_len = 20 * (1 << 10);
     char *buf = malloc(buf_len);
+    if (!buf) {
+        asn1_set_error(&p->error, -1, "alloc encode buffer");
+        goto error;
+    }
 
     int m = 0;
     int r = snmp_enc_pdu(&buf, &m, &buf_len, p);
@@ -538,6 +662,7 @@ int snmp_send_pdu(int fd, snmp_pdu_t *p) {
 
     ssize_t n = sendto(fd, buf, m, 0, (struct sockaddr *)&p->addr, p->addr_len);
     if (n < 0) {
+        asn1_set_error(&p->error, -1, "sendto");
         goto error;
     }
 
@@ -602,7 +727,6 @@ void snmp_dump_var(snmp_var_t *v) {
         break;
     case SNMP_TP_BIT_STR:
     case SNMP_TP_OCT_STR:
-    default:
         fprintf(stderr, "%s", ((asn1_str_t *)v->value)->b);
         break;
     case SNMP_TP_IP_ADDR: {
@@ -618,7 +742,8 @@ void snmp_dump_var(snmp_var_t *v) {
     case SNMP_TP_OID:
         asn1_dump_oid(*(asn1_oid_t *)v->value);
         break;
-    case SNMP_TP_NULL: {
+    case SNMP_TP_NULL:
+    default: {
         asn1_str_t *str = (asn1_str_t *)v->value;
         if (str) {
             fprintf(stderr, "null (%d)", str->len);
@@ -630,7 +755,7 @@ void snmp_dump_var(snmp_var_t *v) {
     }
 }
 
-void snmp_dump_pdu(snmp_pdu_t *p, const char *msg) {
+void snmp_dump_pdu(const char *msg, snmp_pdu_t *p) {
     fprintf(stderr, "%s: ver %c community %s command %-9s (%x) (%d vars) reqid %x %s %d,%d\n",  //
             (msg == NULL ? "pdu" : msg), '0' + p->version,                                      //
             p->community.b, snmp_command_str(p->command), p->command, p->vars_len, p->req_id,   //

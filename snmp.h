@@ -37,9 +37,16 @@
 #define SNMP_TP_INT64     (ASN1_APPLICATION | 0x10)
 #define SNMP_TP_UINT64    (ASN1_APPLICATION | 0x11)
 
-#define SNMP_NO_SUCH_OBJ      (ASN1_CONTEXT | ASN1_PRIMITIVE | 0x0)
-#define SNMP_NO_SUCH_INSTANCE (ASN1_CONTEXT | ASN1_PRIMITIVE | 0x1)
-#define SNMP_END_OF_MIB_VIEW  (ASN1_CONTEXT | ASN1_PRIMITIVE | 0x2)
+#define SNMP_ERR_OK           0x0
+#define SNMP_ERR_TOO_BIG      0x1
+#define SNMP_ERR_NO_SUCH_NAME 0x2
+#define SNMP_ERR_BAD_VALUE    0x3
+#define SNMP_ERR_READ_ONLY    0x4
+#define SNMP_ERR_GENERAL      0x5
+
+#define SNMP_ERR_NO_SUCH_OBJ      (ASN1_CONTEXT | ASN1_PRIMITIVE | 0x0)
+#define SNMP_ERR_NO_SUCH_INSTANCE (ASN1_CONTEXT | ASN1_PRIMITIVE | 0x1)
+#define SNMP_ERR_END_OF_MIB_VIEW  (ASN1_CONTEXT | ASN1_PRIMITIVE | 0x2)
 
 typedef asn1_oid_t snmp_oid_t;
 typedef asn1_str_t snmp_str_t;
@@ -79,9 +86,11 @@ void snmp_free_pdu(snmp_pdu_t* p);
 void snmp_free_pdu_vars(snmp_pdu_t* p);
 
 int snmp_add_error(snmp_pdu_t* p, int code, const char* msg);
+int snmp_set_error_index(snmp_pdu_t* p, int code, int index);
 int snmp_add_var(snmp_pdu_t* p, asn1_oid_t oid, int tp, void* val);
 
 int snmp_bind(uint32_t addr, int port);
+int snmp_bind_addr(const char* addr);
 int snmp_close(int fd);
 
 int snmp_recv_pdu(int fd, snmp_pdu_t* pdu);
@@ -89,7 +98,7 @@ int snmp_send_pdu(int fd, snmp_pdu_t* pdu);
 
 int snmp_dump_packet(int fd);
 
-void snmp_dump_pdu(snmp_pdu_t* p, const char* msg);
+void snmp_dump_pdu(const char* msg, snmp_pdu_t* p);
 
 const char* snmp_command_str(int c);
 

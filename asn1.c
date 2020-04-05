@@ -4,6 +4,42 @@
 #include <stdlib.h>
 #include <string.h>
 
+int asn1_cmp_oids(asn1_oid_t a, asn1_oid_t b) {
+    for (int j = 0; j < a.len && j < b.len; j++) {
+        if (a.b[j] < b.b[j]) {
+            return -1;
+        }
+
+        if (a.b[j] > b.b[j]) {
+            return 1;
+        }
+    }
+
+    if (a.len == b.len) {
+        return 0;
+    }
+
+    if (a.len < b.len) {
+        return -1;
+    }
+
+    return 1;
+}
+
+int asn1_oid_has_prefix(asn1_oid_t a, asn1_oid_t b) {
+    for (int j = 0; j < a.len && j < b.len; j++) {
+        if (a.b[j] != b.b[j]) {
+            return 0;
+        }
+    }
+
+    if (a.len < b.len) {
+        return 0;
+    }
+
+    return 1;
+}
+
 void asn1_set_error(asn1_error_t *s, int p, const char *m) {
     if (s->code) {
         return;
@@ -50,7 +86,7 @@ asn1_oid_t *asn1_new_oid(int *id, int l) {
     return v;
 }
 
-inline asn1_str_t *asn1_new_str(char *msg, int l) {
+inline asn1_str_t *asn1_new_str(const char *msg, int l) {
     if (l == 0) {
         l = strlen(msg);
     }

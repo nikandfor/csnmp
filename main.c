@@ -6,30 +6,36 @@
 
 int working = 3;
 
-int main(int argc, char *arv[]) {
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <listen_addr>\n", argv[0]);
+        return 1;
+    }
+
     int ret = 1;
 
-    int fd = snmp_bind(0, 5000);
+    snmp_pdu_t p = {0};
+
+    int fd = snmp_bind_addr(argv[1]);
     if (fd < 0) {
-        fprintf(stderr, "bind: %s\n", strerror(errno));
+        fprintf(stderr, "bind error (errno %s)\n", strerror(errno));
         goto error;
     }
 
     fprintf(stderr, "binded\n");
 
-    snmp_pdu_t p = {};
-
     while (working--) {
         int r = snmp_recv_pdu(fd, &p);
-        snmp_dump_pdu(&p, "got packet ");
+        snmp_dump_pdu("got packet ", &p);
 
         if (r < 0) {
             if (p.error.code) {
                 snmp_free_pdu_vars(&p);
                 p.command = SNMP_CMD_RESPONSE;
                 snmp_add_error(&p, p.error.code, p.error.message);
+                fprintf(stderr, "read packet, error: %s (pos %d)", p.error.message, p.error.pos);
             } else {
-                fprintf(stderr, "read packet: %s", strerror(errno));
+                fprintf(stderr, "read packet, errno: %s", strerror(errno));
                 continue;
             }
         } else {
@@ -48,10 +54,14 @@ int main(int argc, char *arv[]) {
 
         r = snmp_send_pdu(fd, &p);
         if (r < 0) {
-            fprintf(stderr, "send packet: %s\n", strerror(errno));
+            if (p.error.code) {
+                fprintf(stderr, "read packet, error: %s (pos %d)", p.error.message, p.error.pos);
+            } else {
+                fprintf(stderr, "send packet, errno: %s\n", strerror(errno));
+            }
         } else {
             fprintf(stderr, "sent %d bytes\n", r);
-            snmp_dump_pdu(&p, "packet sent");
+            snmp_dump_pdu("packet sent", &p);
         }
     }
 
