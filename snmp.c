@@ -113,6 +113,9 @@ void snmp_free_var_value(snmp_var_t *v) {
         break;
     case 0:
     case SNMP_TP_NULL:
+    case SNMP_TP_NO_SUCH_OBJ:
+    case SNMP_TP_NO_SUCH_INSTANCE:
+    case SNMP_TP_END_OF_MIB_VIEW:
         break;
     }
 
@@ -285,6 +288,9 @@ static int _dec_var(const char *b, int *i, int l, int tp, void *v_) {
         r = asn1_dec_oid(b, i, l, (asn1_oid_t *)v->value);
         break;
     case SNMP_TP_NULL:
+    case SNMP_TP_NO_SUCH_OBJ:
+    case SNMP_TP_NO_SUCH_INSTANCE:
+    case SNMP_TP_END_OF_MIB_VIEW:
         r = asn1_dec_string(b, i, l, NULL);
         break;
     }
@@ -475,6 +481,7 @@ static int _enc_var(char **b, int *i, int *l, void *v_) {
 
     switch (v->type) {
     case 0:
+    default:
         asn1_set_error(&v->error, *i, "undefined var type");
         return -1;
     case SNMP_TP_BOOL:
@@ -492,13 +499,15 @@ static int _enc_var(char **b, int *i, int *l, void *v_) {
     case SNMP_TP_BIT_STR:
     case SNMP_TP_OCT_STR:
     case SNMP_TP_IP_ADDR:
-    default:
         r = asn1_enc_string(b, i, l, v->type, *(asn1_str_t *)v->value);
         break;
     case SNMP_TP_OID:
         r = asn1_enc_oid(b, i, l, v->type, *(asn1_oid_t *)v->value);
         break;
     case SNMP_TP_NULL:
+    case SNMP_TP_NO_SUCH_OBJ:
+    case SNMP_TP_NO_SUCH_INSTANCE:
+    case SNMP_TP_END_OF_MIB_VIEW:
         r = asn1_enc_null(b, i, l, v->type);
         break;
     }
@@ -624,6 +633,7 @@ int snmp_recv_pdu(int fd, snmp_pdu_t *p) {
     ssize_t n = recvfrom(fd, (void *)buf, buf_len, 0, (struct sockaddr *)&p->addr, &p->addr_len);
     if (n < 0) {
         asn1_set_error(&p->error, -1, "recvfrom");
+        ret = n;
         goto error;
     }
 
@@ -666,6 +676,7 @@ int snmp_send_pdu(int fd, snmp_pdu_t *p) {
     ssize_t n = sendto(fd, buf, m, 0, (struct sockaddr *)&p->addr, p->addr_len);
     if (n < 0) {
         asn1_set_error(&p->error, -1, "sendto");
+        ret = n;
         goto error;
     }
 
@@ -747,12 +758,15 @@ void snmp_dump_var(snmp_var_t *v) {
         asn1_dump_oid(*(asn1_oid_t *)v->value);
         break;
     case SNMP_TP_NULL:
+    case SNMP_TP_NO_SUCH_OBJ:
+    case SNMP_TP_NO_SUCH_INSTANCE:
+    case SNMP_TP_END_OF_MIB_VIEW:
     default: {
         asn1_str_t *str = (asn1_str_t *)v->value;
         if (str) {
-            fprintf(stderr, "null (%d)", str->len);
+            fprintf(stderr, "null [%x] (%d)", v->type, str->len);
         } else {
-            fprintf(stderr, "null");
+            fprintf(stderr, "null [%x]", v->type);
         }
         break;
     }

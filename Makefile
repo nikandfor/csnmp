@@ -2,10 +2,8 @@
 OPTS=-Wall -Werror -pedantic -g
 
 
-ss: main.cpp snmp.a asn1.a
-	g++ -std=c++11 ${OPTS} -o $@ $^
-
-main.cpp: easysnmp.hpp Makefile
+ss: main.cpp snmp.a asn1.a easysnmp.hpp
+	g++ -std=c++11 ${OPTS} -o $@ $< snmp.a asn1.a
 
 %.a: %.c
 	gcc -c ${OPTS} -o $@ $^

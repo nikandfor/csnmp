@@ -125,7 +125,7 @@ class EasySNMP {
 
     void resp_get(snmp_pdu_t *p) {
         if (p->vars_len == 0) {
-            snmp_add_error(p, SNMP_ERR_NO_SUCH_NAME, "empty request");
+            snmp_add_error(p, 1, "empty request");
             return;
         }
 
@@ -136,7 +136,7 @@ class EasySNMP {
 
             auto it = oids.find(v->oid);
             if (it == oids.end()) {
-                v->type = SNMP_TP_NULL;
+                v->type = SNMP_TP_NO_SUCH_OBJ;
                 //  snmp_add_error(p, SNMP_ERR_NO_SUCH_NAME, "no such variable");
                 continue;
             }
@@ -150,7 +150,7 @@ class EasySNMP {
 
     void resp_get_next(snmp_pdu_t *p) {
         if (p->vars_len == 0) {
-            snmp_add_error(p, SNMP_ERR_NO_SUCH_NAME, "empty request");
+            snmp_add_error(p, 1, "empty request");
             return;
         }
 
@@ -158,7 +158,7 @@ class EasySNMP {
 
         auto it = oids.upper_bound(first);
         if (it == oids.end()) {
-            snmp_add_error(p, SNMP_ERR_END_OF_MIB_VIEW, "no more vars");
+            p->vars[0].type = SNMP_TP_END_OF_MIB_VIEW;
             return;
         }
 
@@ -177,16 +177,16 @@ class EasySNMP {
 
     void resp_get_bulk(snmp_pdu_t *p) {
         if (p->vars_len == 0) {
-            snmp_add_error(p, SNMP_ERR_NO_SUCH_NAME, "empty request");
+            snmp_add_error(p, 1, "empty request");
             return;
         }
 
         asn1_oid_t first = p->vars[0].oid;
         first = asn1_crt_oid(first.b, first.len);
 
-        auto it = oids.lower_bound(first);
+        auto it = oids.upper_bound(first);
         if (it == oids.end()) {
-            snmp_add_error(p, SNMP_ERR_END_OF_MIB_VIEW, "no more vars");
+            snmp_add_var(p, first, SNMP_TP_END_OF_MIB_VIEW, NULL);
             goto error;
         }
 
@@ -209,6 +209,11 @@ class EasySNMP {
                 if (p->vars_len >= p->max_repetitions) {
                     break;
                 }
+            }
+
+            if (it == oids.end() && p->vars_len < p->max_repetitions) {
+                asn1_oid_t last = p->vars[p->vars_len - 1].oid;
+                snmp_add_var(p, asn1_crt_oid(last.b, last.len), SNMP_TP_END_OF_MIB_VIEW, NULL);
             }
         } catch (...) {
             asn1_free_oid(&first);
