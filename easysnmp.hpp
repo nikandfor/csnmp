@@ -50,6 +50,34 @@ class Int : public Var {
     }
 };
 
+class Int64 : public Var {
+   public:
+    virtual long long operator()() const = 0;
+
+    int type() const {
+        return SNMP_TP_INT64;  // not supported by some implementations
+    }
+
+    void *val() const {
+        long long v = this->operator()();
+        return snmp_new_long(v);
+    }
+};
+
+class ObjectID : public Var {
+   public:
+    virtual vector<int> operator()() const = 0;
+
+    int type() const {
+        return ASN1_OID;
+    }
+
+    void *val() const {
+        vector<int> v = this->operator()();
+        return asn1_new_oid(v.data(), v.size());
+    }
+};
+
 class OID {
     asn1_oid_t oid;
 
@@ -91,7 +119,7 @@ class EasySNMP {
     void listen(string addr) {
         fd = snmp_bind_addr(addr.c_str());
         if (fd < 0) {
-            throw new logic_error("can't bind");
+            throw logic_error("can't bind");
         }
     }
 
@@ -141,7 +169,7 @@ class EasySNMP {
         void *val = it->second->val();
 
         if (type == 0) {
-            throw new logic_error("bad var");
+            throw logic_error("bad var");
         }
 
         snmp_add_var(p, oid, type, val);
@@ -168,16 +196,12 @@ class EasySNMP {
             for (; it != oids.end(); it++) {
                 asn1_oid_t oid = it->first;
 
-                cerr << "qwe ";
-                asn1_dump_oid(oid);
-                cerr << endl;
-
                 int type = it->second->type();
                 void *val = it->second->val();
 
                 if (type == 0) {
                     asn1_free_oid(&oid);
-                    throw new logic_error("bad var");
+                    throw logic_error("bad var");
                 }
 
                 snmp_add_var(p, oid, type, val);
@@ -204,7 +228,7 @@ class EasySNMP {
             if (r < 0) {
                 if (p.error.code == 0) {
                     perror("recv pdu error, errno:");
-                    throw new logic_error("read error");
+                    throw logic_error("read error");
                 } else {
                     cerr << "recv pdu: " << p.error.message << endl;
                 }
@@ -242,7 +266,7 @@ class EasySNMP {
                 if (p.error.code == 0) {
                     perror("send pdu error, errno:");
                     snmp_dump_pdu(NULL, &p);
-                    throw new logic_error("send response");
+                    throw logic_error("send response");
                 } else {
                     cerr << "send pdu: " << p.error.message << endl;
                     snmp_dump_pdu(NULL, &p);

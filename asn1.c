@@ -272,7 +272,7 @@ static int _len_size(int l) {
 
     int s = 2;
 
-    for (int q = l >> 8; q != 0; q >>= 8) {
+    for (unsigned q = l >> 8; q != 0; q >>= 8) {
         s++;
     }
 
@@ -286,11 +286,11 @@ static void _enc_len(char *buf, int *i, int len) {
     }
 
     int n = 1;
-    for (int q = len >> 8; q != 0; q >>= 8) {
+    for (unsigned q = len >> 8; q != 0; q >>= 8) {
         n++;
     }
 
-    buf[(*i)++] = n;
+    buf[(*i)++] = n | ASN1_LONGLEN;
 
     for (int j = n - 1; j >= 0; j--) {
         buf[(*i)++] = len >> (8 * j);
@@ -332,7 +332,7 @@ int asn1_enc_int(char **buf, int *i, int *l, int tp, int val) {
 
 int asn1_enc_long(char **buf, int *i, int *l, int tp, long long val) {
     int n = 1;
-    for (int q = val >> 8; q != 0; q >>= 8) {
+    for (unsigned long long q = val >> 8; q != 0; q >>= 8) {
         n++;
     }
 

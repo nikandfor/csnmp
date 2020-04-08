@@ -90,6 +90,7 @@ int snmp_close(int fd) {
 
 void snmp_free_var_value(snmp_var_t *v) {
     switch (v->type) {
+    case SNMP_TP_BOOL:
     case SNMP_TP_INT:
     case SNMP_TP_COUNTER:
     case SNMP_TP_GAUGE:
@@ -258,6 +259,7 @@ static int _dec_var(const char *b, int *i, int l, int tp, void *v_) {
     v->type = b[(*i)++];
 
     switch (v->type) {
+    case SNMP_TP_BOOL:
     case SNMP_TP_INT:
     case SNMP_TP_COUNTER:
     case SNMP_TP_GAUGE:
@@ -300,7 +302,7 @@ static int _dec_pdu3(const char *b, int *i, int l, int tp, void *p_) {
     snmp_free_pdu_vars(p);
 
     while (*i < l) {
-        snmp_var_t v = {};
+        snmp_var_t v = {0};
         int r = asn1_dec_sequence(b, i, l, _dec_var, &v);
         if (r < 0) {
             p->error = v.error;
@@ -475,6 +477,7 @@ static int _enc_var(char **b, int *i, int *l, void *v_) {
     case 0:
         asn1_set_error(&v->error, *i, "undefined var type");
         return -1;
+    case SNMP_TP_BOOL:
     case SNMP_TP_INT:
     case SNMP_TP_COUNTER:
     case SNMP_TP_GAUGE:
@@ -714,6 +717,7 @@ void snmp_dump_var(snmp_var_t *v) {
     fprintf(stderr, ": (tp %x) ", v->type);
 
     switch (v->type) {
+    case SNMP_TP_BOOL:
     case SNMP_TP_INT:
     case SNMP_TP_COUNTER:
     case SNMP_TP_GAUGE:
