@@ -164,7 +164,7 @@ int asn1_dec_long(const char *b, int *i, int l, long long *val) {
     long long res = 0;
 
     for (int j = 0; j < n; j++) {
-        res = res << 8 | b[(*i)++];
+        res = res << 8 | (unsigned char)b[(*i)++];
     }
 
     if (val) {
